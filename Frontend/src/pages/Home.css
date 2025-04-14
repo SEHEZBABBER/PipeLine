@@ -1,0 +1,61 @@
+.home-form-container {
+    min-height: 100vh;
+    background-color: #f9fafb;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  .home-form {
+    background: #ffffff;
+    padding: 30px 40px;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 400px;
+  }
+  
+  .form-section {
+    margin-bottom: 25px;
+  }
+  
+  .form-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 10px;
+  }
+  
+  .toggle-icon {
+    font-size: 1.2rem;
+    color: #2563eb;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+  
+  .toggle-icon:hover {
+    transform: scale(1.1);
+  }
+  
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #f3f4f6;
+    color: #111827;
+    transition: border-color 0.3s ease;
+  }
+  
+  select:focus {
+    outline: none;
+    border-color: #2563eb;
+    background-color: #fff;
+  }
+  
