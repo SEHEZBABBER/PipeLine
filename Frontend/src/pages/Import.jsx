@@ -1,14 +1,20 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
+import axios from 'axios';
 import { useState } from 'react';
+import { useNavigate } from "react-router-dom";
+
 
 function Import() {
+  const naviagte = useNavigate();
   const [formData, setFormData] = useState({
     host_no: '',
     port_no: '',
     database_name: '',
     user_name: '',
-    jwt_token: '',
+    password: '',
   });
+  const [scuessMsg,setSucessMsg] = useState("");
+  const [failureMsg,setFailureMsg] = useState("");
 
   function handleChange(e) {
     setFormData({
@@ -24,6 +30,21 @@ function Import() {
       e.stopPropagation();
     } else {
       e.preventDefault(); // optional: prevent form from refreshing the page
+      axios.post('http://localhost:8080/Importdata',formData,{withCredentials:true}).then((res)=>{
+        // is the login was successul tnow we are moving to the pages that can be used only bt the authorised user only so i need to add teh kwt token to the cookies now
+        if(res.data.Message){
+          setSucessMsg(res.data.Message);
+          setFailureMsg("");
+        }
+        console.log(res);
+        naviagte('/selectTabels');
+      }).catch((err)=>{
+        console.log(err);
+        if(err.response.data.Message){
+          setFailureMsg(err.response.data.Message);
+          setSucessMsg("");
+        }
+      })
       console.log('Form submitted with data:', formData);
       // You can now send `formData` to your backend
     }
@@ -87,19 +108,25 @@ function Import() {
 
         <input
           type="password"
-          name="jwt_token"
-          placeholder='Enter JWT token here'
+          name="password"
+          placeholder='Enter password here'
           className='form-control w-100 p-2 mt-3'
-          value={formData.jwt_token}
+          value={formData.password}
           onChange={handleChange}
           required
         />
         <div className="invalid-feedback">Please enter a JWT token.</div>
 
         <button type="submit" className='w-100 btn btn-primary mt-5'>Submit</button>
+        {scuessMsg ? (<p style={{color:"green"}}>{scuessMsg}</p>):<p></p>}
+        {failureMsg ? (<p style={{color:"red"}}>{failureMsg}</p>):<p></p>}
       </form>
     </div>
   );
 }
 
 export default Import;
+
+
+
+// fd14838827b51d518073b8ef32f2c44fbb66109e12e99de8df269e1476e21cd1
