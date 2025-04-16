@@ -132,6 +132,21 @@ public class userRoutes {
 
             // Step 5: Final insert
             String insertSQL = "INSERT INTO " + targetTable + " VALUES " + String.join(",", valueGroups) + ";";
+
+            String[] splitted = insertSQL.split("\\(");
+            StringBuilder sb = new StringBuilder();
+
+            for (int i = 0; i < splitted.length; ++i) {
+                if (i == splitted.length - 1)
+                    break;
+
+                sb.append(splitted[i]);
+                sb.append('(');
+            }
+            insertSQL = sb.toString();
+            insertSQL = insertSQL.substring(0, insertSQL.length() - 2) + ';';
+
+            System.out.println(insertSQL);
             stmt.execute(insertSQL);
 
         } catch (Exception e) {
