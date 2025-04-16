@@ -17,6 +17,8 @@ import java.net.URL;
 import java.sql.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -61,6 +63,7 @@ public class userRoutes {
     public ResponseEntity<Map<String, String>> upload(@RequestBody Map<String, String> uploaddata) {
         System.out.println(uploaddata);
 
+        // Set connection credentials
         Response_conn_DB.setHostNo(uploaddata.get("host_no"));
         Response_conn_DB.setUserName(uploaddata.get("user_name"));
         Response_conn_DB.setServerNo(uploaddata.get("port_no"));
@@ -83,16 +86,24 @@ public class userRoutes {
             List<String[]> allRows = csvReader.readAll();
             if (allRows.isEmpty()) throw new RuntimeException("Empty CSV file.");
 
-            String[] headers = allRows.get(1); // Correct header row
+            String[] headers = allRows.get(1);
             List<String[]> dataRows = allRows.subList(2, allRows.size());
+
+            // Normalize headers
+            System.out.println("headers");
+            for (int i = 0; i < headers.length; i++) {
+                System.out.print(headers[i]+" ");
+                headers[i] = headers[i].trim().toLowerCase(); // Make headers lowercase and trim spaces
+            }
+            System.out.println();
 
             Statement stmt = conn.createStatement();
 
             // Step 2: Create table if required
-            if ("true".equalsIgnoreCase(createNew)) {
+            if ("yes".equalsIgnoreCase(createNew)) {
                 StringBuilder createSQL = new StringBuilder("CREATE TABLE IF NOT EXISTS " + targetTable + " (");
                 for (int i = 0; i < headers.length; i++) {
-                    createSQL.append(headers[i]).append(" String"); // Default to String
+                    createSQL.append(headers[i]).append(" String");
                     if (i < headers.length - 1) createSQL.append(", ");
                 }
                 createSQL.append(") ENGINE = MergeTree() ORDER BY tuple();");
@@ -100,19 +111,22 @@ public class userRoutes {
             }
 
             // Step 3: Read actual schema
-            Map<String, String> columnTypes = new LinkedHashMap<>(); // ordered
+            Map<String, String> columnTypes = new LinkedHashMap<>();
             ResultSet rs = stmt.executeQuery("DESCRIBE TABLE " + targetTable);
             while (rs.next()) {
-                columnTypes.put(rs.getString("name"), rs.getString("type"));
-                System.out.println(columnTypes);
+                columnTypes.put(rs.getString("name").trim().toLowerCase(), rs.getString("type"));
             }
+
+            // DEBUG: Check mapping
+            System.out.println("DB Columns: " + columnTypes.keySet());
+            System.out.println("CSV Headers: " + Arrays.toString(headers));
 
             // Step 4: Insert data row by row
             List<String> valueGroups = new ArrayList<>();
             for (String[] row : dataRows) {
                 Map<String, String> csvData = new LinkedHashMap<>();
                 for (int i = 0; i < headers.length && i < row.length; i++) {
-                    csvData.put(headers[i], row[i]);
+                    csvData.put(headers[i], row[i].trim());
                 }
 
                 List<String> formattedValues = new ArrayList<>();
@@ -130,24 +144,18 @@ public class userRoutes {
                 valueGroups.add("(" + String.join(",", formattedValues) + ")");
             }
 
-            // Step 5: Final insert
-            String insertSQL = "INSERT INTO " + targetTable + " VALUES " + String.join(",", valueGroups) + ";";
-
-            String[] splitted = insertSQL.split("\\(");
-            StringBuilder sb = new StringBuilder();
-
-            for (int i = 0; i < splitted.length; ++i) {
-                if (i == splitted.length - 1)
-                    break;
-
-                sb.append(splitted[i]);
-                sb.append('(');
+            int lastCommaIndex = String.join(",", valueGroups).lastIndexOf(",(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL)");
+            if (lastCommaIndex != -1) {
+                String cleanedValues = String.join(",", valueGroups).substring(0, lastCommaIndex);
+                String insertSQL = "INSERT INTO " + targetTable + " VALUES " + cleanedValues + ";";
+                System.out.println(insertSQL);
+                stmt.execute(insertSQL);
+            } else {
+                // Fallback if the tuple isn't found
+                String insertSQL = "INSERT INTO " + targetTable + " VALUES " + String.join(",", valueGroups) + ";";
+                System.out.println(insertSQL);
+                stmt.execute(insertSQL);
             }
-            insertSQL = sb.toString();
-            insertSQL = insertSQL.substring(0, insertSQL.length() - 2) + ';';
-
-            System.out.println(insertSQL);
-            stmt.execute(insertSQL);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -161,27 +169,6 @@ public class userRoutes {
         return new ResponseEntity<>(successMsg, HttpStatus.OK);
     }
 
-    private String formatValueForClickHouse(String value, String type) {
-        try {
-            value = value.trim();
-            if (type.startsWith("Nullable(")) {
-                type = type.substring(9, type.length() - 1);
-            }
-
-            return switch (type) {
-                case "Int8", "Int16", "Int32", "Int64",
-                     "UInt8", "UInt16", "UInt32", "UInt64" -> String.valueOf(Long.parseLong(value));
-                case "Float32", "Float64" -> String.valueOf(Double.parseDouble(value));
-                case "Date", "Date32", "DateTime", "DateTime64" ->
-                        "'" + value.replace("'", "''") + "'";
-                case "String", "UUID" ->
-                        "'" + value.replace("'", "''") + "'";
-                default -> "'" + value.replace("'", "''") + "'";
-            };
-        } catch (Exception e) {
-            return "NULL";
-        }
-    }
 
 
     @GetMapping("/get-generated-file")
@@ -238,6 +225,28 @@ public class userRoutes {
                     .body("SQL Error: " + e.getMessage());
         }
     }
+    private String formatValueForClickHouse(String value, String type) {
+        try {
+            value = value.trim();
+            if (type.startsWith("Nullable(")) {
+                type = type.substring(9, type.length() - 1);
+            }
+
+            return switch (type) {
+                case "Int8", "Int16", "Int32", "Int64",
+                     "UInt8", "UInt16", "UInt32", "UInt64" -> String.valueOf(Long.parseLong(value));
+                case "Float32", "Float64" -> String.valueOf(Double.parseDouble(value));
+                case "Date", "Date32", "DateTime", "DateTime64" ->
+                        "'" + value.replace("'", "''") + "'";
+                case "String", "UUID", "Boolean" ->
+                        "'" + value.replace("'", "''") + "'";
+                default -> "'" + value.replace("'", "''") + "'";
+            };
+        } catch (Exception e) {
+            return "NULL";
+        }
+    }
+
 
     @PostMapping("/save-columns")
     public static ResponseEntity<?> saveSelectedColumns(@RequestBody Map<String, List<String>> columnsFromFrontend) {
