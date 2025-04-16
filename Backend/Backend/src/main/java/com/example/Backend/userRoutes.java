@@ -1,23 +1,176 @@
 package com.example.Backend;
 
-import com.google.common.collect.Table;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.opencsv.CSVParserBuilder;
+import com.opencsv.CSVReader;
+import com.opencsv.CSVReaderBuilder;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.http.*;
+import java.io.*;
+import java.net.URL;
+import java.sql.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.stream.Collectors;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.*;
 
 @RestController
 @CrossOrigin(origins = "http://localhost:5173",allowCredentials = "true")
 public class userRoutes {
+    private static Object castToType(String value, String type) {
+        if (value == null || value.trim().isEmpty()) return null;
+
+        try {
+            switch (type.toLowerCase()) {
+                case "int":
+                case "int32":
+                case "integer":
+                    return Integer.parseInt(value.trim());
+                case "int64":
+                case "bigint":
+                    return Long.parseLong(value.trim());
+                case "float":
+                case "float32":
+                    return Float.parseFloat(value.trim());
+                case "float64":
+                case "double":
+                    return Double.parseDouble(value.trim());
+                case "boolean":
+                case "bool":
+                    return Boolean.parseBoolean(value.trim());
+                case "date":
+                case "datetime":
+                    return "'" + value.trim() + "'"; // ClickHouse expects date/time in quotes
+                default:
+                    return value.trim(); // Treat as String
+            }
+        } catch (Exception e) {
+            return null; // If parsing fails, return NULL
+        }
+    }
+
+    @PostMapping("/upload")
+    public ResponseEntity<Map<String, String>> upload(@RequestBody Map<String, String> uploaddata) {
+        System.out.println(uploaddata);
+
+        Response_conn_DB.setHostNo(uploaddata.get("host_no"));
+        Response_conn_DB.setUserName(uploaddata.get("user_name"));
+        Response_conn_DB.setServerNo(uploaddata.get("port_no"));
+        Response_conn_DB.setDatabaseName(uploaddata.get("database_name"));
+        Response_conn_DB.setPassword(uploaddata.get("password"));
+
+        String fileUrl = uploaddata.get("file");
+        String delimiter = uploaddata.get("delimiter");
+        String targetTable = uploaddata.get("target_table");
+        String createNew = uploaddata.get("create_table");
+
+        try (Connection conn = ConnectionManager.getConn()) {
+            // Step 1: Read CSV
+            InputStream inputStream = new URL(fileUrl).openStream();
+            InputStreamReader reader = new InputStreamReader(inputStream);
+            CSVReader csvReader = new CSVReaderBuilder(reader)
+                    .withCSVParser(new CSVParserBuilder().withSeparator(delimiter.charAt(0)).build())
+                    .build();
+
+            List<String[]> allRows = csvReader.readAll();
+            if (allRows.isEmpty()) throw new RuntimeException("Empty CSV file.");
+
+            String[] headers = allRows.get(1); // Correct header row
+            List<String[]> dataRows = allRows.subList(2, allRows.size());
+
+            Statement stmt = conn.createStatement();
+
+            // Step 2: Create table if required
+            if ("true".equalsIgnoreCase(createNew)) {
+                StringBuilder createSQL = new StringBuilder("CREATE TABLE IF NOT EXISTS " + targetTable + " (");
+                for (int i = 0; i < headers.length; i++) {
+                    createSQL.append(headers[i]).append(" String"); // Default to String
+                    if (i < headers.length - 1) createSQL.append(", ");
+                }
+                createSQL.append(") ENGINE = MergeTree() ORDER BY tuple();");
+                stmt.execute(createSQL.toString());
+            }
+
+            // Step 3: Read actual schema
+            Map<String, String> columnTypes = new LinkedHashMap<>(); // ordered
+            ResultSet rs = stmt.executeQuery("DESCRIBE TABLE " + targetTable);
+            while (rs.next()) {
+                columnTypes.put(rs.getString("name"), rs.getString("type"));
+                System.out.println(columnTypes);
+            }
+
+            // Step 4: Insert data row by row
+            List<String> valueGroups = new ArrayList<>();
+            for (String[] row : dataRows) {
+                Map<String, String> csvData = new LinkedHashMap<>();
+                for (int i = 0; i < headers.length && i < row.length; i++) {
+                    csvData.put(headers[i], row[i]);
+                }
+
+                List<String> formattedValues = new ArrayList<>();
+                for (String col : columnTypes.keySet()) {
+                    String value = csvData.getOrDefault(col, null);
+                    String type = columnTypes.get(col);
+
+                    if (value == null || value.isBlank()) {
+                        formattedValues.add("NULL");
+                    } else {
+                        formattedValues.add(formatValueForClickHouse(value, type));
+                    }
+                }
+
+                valueGroups.add("(" + String.join(",", formattedValues) + ")");
+            }
+
+            // Step 5: Final insert
+            String insertSQL = "INSERT INTO " + targetTable + " VALUES " + String.join(",", valueGroups) + ";";
+            stmt.execute(insertSQL);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            Map<String, String> failureMsg = new HashMap<>();
+            failureMsg.put("Message", "Upload failed: " + e.getMessage());
+            return new ResponseEntity<>(failureMsg, HttpStatus.BAD_REQUEST);
+        }
+
+        Map<String, String> successMsg = new HashMap<>();
+        successMsg.put("Message", "Upload successful.");
+        return new ResponseEntity<>(successMsg, HttpStatus.OK);
+    }
+
+    private String formatValueForClickHouse(String value, String type) {
+        try {
+            value = value.trim();
+            if (type.startsWith("Nullable(")) {
+                type = type.substring(9, type.length() - 1);
+            }
+
+            return switch (type) {
+                case "Int8", "Int16", "Int32", "Int64",
+                     "UInt8", "UInt16", "UInt32", "UInt64" -> String.valueOf(Long.parseLong(value));
+                case "Float32", "Float64" -> String.valueOf(Double.parseDouble(value));
+                case "Date", "Date32", "DateTime", "DateTime64" ->
+                        "'" + value.replace("'", "''") + "'";
+                case "String", "UUID" ->
+                        "'" + value.replace("'", "''") + "'";
+                default -> "'" + value.replace("'", "''") + "'";
+            };
+        } catch (Exception e) {
+            return "NULL";
+        }
+    }
+
+
     @GetMapping("/get-generated-file")
-    public ResponseEntity<?> getGeneratedFile() {
+    public static ResponseEntity<?> getGeneratedFile() {
         try {
             String[] tables = SelectedTables.getTables();
             Map<String, List<String>> selectedColumnsMap = SelectedColumns.getColumnsMap();

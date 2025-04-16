@@ -1,7 +1,8 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { useState } from 'react';
-
+import axios from 'axios';
 function Export() {
+  // const [successMsg,setSucessMsg] = useState("");
   const [formData, setFormData] = useState({
     file: null,
     delimiter: ',',
@@ -9,7 +10,7 @@ function Export() {
     port_no: '',
     database_name: '',
     user_name: '',
-    jwt_token: '',
+    password: '',
     target_table: '',
     create_table: false,
   });
@@ -22,29 +23,63 @@ function Export() {
     });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     const form = e.target;
     if (!form.checkValidity()) {
       e.preventDefault();
       e.stopPropagation();
-    } else {
-      e.preventDefault(); // Optional: prevent form from refreshing the page
-      console.log('Form submitted with data:', {
-        ...formData,
-        file: formData.file ? formData.file.name : null, // Log file name for clarity
-      });
-      // You can now send `formData` to your backend
+      form.classList.add('was-validated');
+      return;
     }
+  
+    e.preventDefault();
+  
+    try {
+      if (!formData.file) {
+        alert("Please select a file.");
+        return;
+      }
+  
+      // Upload to Cloudinary
+      const cloudData = new FormData();
+      cloudData.append("file", formData.file);
+      cloudData.append("upload_preset", "upload_present"); // corrected preset name
+  
+      const cloudRes = await axios.post(
+        "https://api.cloudinary.com/v1_1/dbusctnyq/auto/upload",
+        cloudData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+  
+      const uploadedUrl = cloudRes.data.secure_url;
+      console.log("Uploaded to Cloudinary:", uploadedUrl);
+  
+      // Send everything to your backend
+      const backendPayload = {
+        ...formData,
+        file: uploadedUrl,
+      };
 
+      console.log(backendPayload);
+      const res = await axios.post("http://localhost:8080/upload", backendPayload);
+      console.log("Backend response:", res.data);
+    } catch (error) {
+      console.error("Something went wrong:", error.response?.data || error.message);
+      alert("Upload failed. Please check console for details.");
+    }
+  
     form.classList.add('was-validated');
   }
-
   return (
     <div
       className="d-flex flex-column justify-content-center align-items-center text-center"
       style={{ width: '100vw', height: '100vh', backgroundColor: '#FFFDD0' }}
     >
-      <h1>Enter Data for Export to ClickHouse</h1>
+      <h1 className='mb-5'>Enter Data for Export to ClickHouse</h1>
 
       <form
         className="mt-5 d-flex justify-content-center align-items-center text-center flex-column needs-validation"
@@ -122,10 +157,10 @@ function Export() {
 
         <input
           type="password"
-          name="jwt_token"
+          name="password"
           placeholder="Enter JWT token here"
           className="form-control w-100 p-2 mt-3"
-          value={formData.jwt_token}
+          value={formData.password}
           onChange={handleChange}
           required
         />
