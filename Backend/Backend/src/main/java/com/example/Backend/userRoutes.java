@@ -61,7 +61,7 @@ public class userRoutes {
 
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> upload(@RequestBody Map<String, String> uploaddata) {
-        System.out.println(uploaddata);
+//        System.out.println(uploaddata);
 
         // Set connection credentials
         Response_conn_DB.setHostNo(uploaddata.get("host_no"));
@@ -90,17 +90,17 @@ public class userRoutes {
             List<String[]> dataRows = allRows.subList(2, allRows.size());
 
             // Normalize headers
-            System.out.println("headers");
+//            System.out.println("headers");
             for (int i = 0; i < headers.length; i++) {
-                System.out.print(headers[i]+" ");
+//                System.out.print(headers[i]+" ");
                 headers[i] = headers[i].trim().toLowerCase(); // Make headers lowercase and trim spaces
             }
-            System.out.println();
+//            System.out.println();
 
             Statement stmt = conn.createStatement();
 
             // Step 2: Create table if required
-            if ("yes".equalsIgnoreCase(createNew)) {
+            if ("true".equalsIgnoreCase(createNew)) {
                 StringBuilder createSQL = new StringBuilder("CREATE TABLE IF NOT EXISTS " + targetTable + " (");
                 for (int i = 0; i < headers.length; i++) {
                     createSQL.append(headers[i]).append(" String");
@@ -118,8 +118,8 @@ public class userRoutes {
             }
 
             // DEBUG: Check mapping
-            System.out.println("DB Columns: " + columnTypes.keySet());
-            System.out.println("CSV Headers: " + Arrays.toString(headers));
+//            System.out.println("DB Columns: " + columnTypes.keySet());
+//            System.out.println("CSV Headers: " + Arrays.toString(headers));
 
             // Step 4: Insert data row by row
             List<String> valueGroups = new ArrayList<>();
@@ -148,12 +148,12 @@ public class userRoutes {
             if (lastCommaIndex != -1) {
                 String cleanedValues = String.join(",", valueGroups).substring(0, lastCommaIndex);
                 String insertSQL = "INSERT INTO " + targetTable + " VALUES " + cleanedValues + ";";
-                System.out.println(insertSQL);
+//                System.out.println(insertSQL);
                 stmt.execute(insertSQL);
             } else {
                 // Fallback if the tuple isn't found
                 String insertSQL = "INSERT INTO " + targetTable + " VALUES " + String.join(",", valueGroups) + ";";
-                System.out.println(insertSQL);
+//                System.out.println(insertSQL);
                 stmt.execute(insertSQL);
             }
 
@@ -424,7 +424,7 @@ public class userRoutes {
     @PostMapping("/Importdata")
     public static ResponseEntity<Map<String,String>> Import(@RequestBody Map<String,String> ImportData){
         // host no server no username jwt token data base name
-        System.out.println(ImportData);
+//        System.out.println(ImportData);
         if(ImportData.get("host_no") == null){
             Map<String,String> errorResponse = new HashMap<>();
             errorResponse.put("Message","Missing Required Field : hostNo ");
